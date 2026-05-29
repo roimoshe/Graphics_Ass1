@@ -261,6 +261,47 @@ images while $G$ was trained against the un-augmented version, the two
 networks would be optimising different distributions and training would
 degrade.
 
+% -------------------------------------------------------------------------
+\subsection*{Task 1.6 -- W\&B Logging}
+
+Logging is wired up at four sites in \verb|vanilla_gan.py|:
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Run init} (top of \verb|training_loop|, after the
+          fixed-noise vector is created):
+\begin{lstlisting}
+wandb.init(
+    project='assignment1-dcgan',
+    name=f'dcgan_diffaug={opts.use_diffaug}',
+    config=vars(opts),
+)
+\end{lstlisting}
+          The run name carries the boolean \verb|opts.use_diffaug| so
+          the with/without comparison is immediate in the dashboard,
+          and \verb|config=vars(opts)| serialises every command-line
+          argument.
+
+    \item \textbf{Scalar losses} every \verb|opts.log_step| iterations:
+          \verb|D/real_loss|, \verb|D/fake_loss|, \verb|D/total_loss|,
+          \verb|G/loss|, all keyed by \verb|step=iteration|. The
+          \verb|D/| and \verb|G/| prefixes group the four panels under
+          ``Discriminator'' and ``Generator'' headers in W\&B.
+
+    \item \textbf{Image grid} inside \verb|save_samples| (every
+          \verb|opts.sample_every| iterations) using
+          \verb|wandb.Image(grid, caption=f'iter {iteration}')|. The
+          grid is the same uint8 image that is also written to disk, so
+          the dashboard sample matches the local artefact bit-for-bit.
+
+    \item \textbf{Run finish}: \verb|wandb.finish()| after the training
+          loop returns.
+\end{enumerate}
+
+Both \verb|wandb.log| calls pass \verb|step=iteration|, so the
+loss-curve panel and the image panel share a common monotone time axis
+that lets the visual quality at iteration $k$ be read off against the
+loss values at the same $k$.
+
 % =========================================================================
 
 \end{document}
