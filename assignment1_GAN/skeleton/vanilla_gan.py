@@ -154,23 +154,13 @@ def training_loop(train_dataloader, opts):
 
             # 1. Discriminator loss on real images: (D(x) - 1)^2
             real_images_processed = prepare_images(real_images, opts)
-
-            # ------------------------------------------------------------------
-            # TODO 1.4 – compute D_real_loss using real_images_processed.
-            # ------------------------------------------------------------------
-            D_real_loss = None  # TODO
+            D_real_loss = ((D(real_images_processed) - 1) ** 2).mean()
 
             # 2. Sample a batch of noise vectors z.
-            # ------------------------------------------------------------------
-            # TODO 1.4 – sample noise.
-            # ------------------------------------------------------------------
-            noise = None  # TODO
+            noise = sample_noise(opts.batch_size, opts.noise_size)
 
             # 3. Generate fake images G(z).
-            # ------------------------------------------------------------------
-            # TODO 1.4 – generate fake_images from the noise.
-            # ------------------------------------------------------------------
-            fake_images = None  # TODO
+            fake_images = G(noise)
 
             # 4. Discriminator loss on fake images: (D(G(z)))^2
             # Note:
@@ -178,11 +168,7 @@ def training_loop(train_dataloader, opts):
             # update do not flow back into the generator parameters.
 
             fake_images_processed = prepare_images(fake_images.detach(), opts)
-
-            # ------------------------------------------------------------------
-            # TODO 1.4 – compute D_fake_loss using fake_images_processed.
-            # ------------------------------------------------------------------
-            D_fake_loss = None  # TODO
+            D_fake_loss = (D(fake_images_processed) ** 2).mean()
 
             # 5. Total discriminator loss and update step.
             D_total_loss = (D_real_loss + D_fake_loss) / 2
@@ -195,24 +181,14 @@ def training_loop(train_dataloader, opts):
             # ==============================================================
 
             # 1. Sample a fresh batch of noise vectors z.
-            # ------------------------------------------------------------------
-            # TODO 1.4 – sample new noise. Do not reuse the discriminator noise.
-            # ------------------------------------------------------------------
-            noise = None  # TODO
+            noise = sample_noise(opts.batch_size, opts.noise_size)
 
             # 2. Generate fake images G(z).
-            # ------------------------------------------------------------------
-            # TODO 1.4 – generate fake_images from the noise.
-            # ------------------------------------------------------------------
-            fake_images = None  # TODO
+            fake_images = G(noise)
 
             # 3. Generator loss: (D(G(z)) - 1)^2
             fake_images_processed = prepare_images(fake_images, opts)
-
-            # ------------------------------------------------------------------
-            # TODO 1.4 – compute G_loss using fake_images_processed.
-            # ------------------------------------------------------------------
-            G_loss = None  # TODO
+            G_loss = ((D(fake_images_processed) - 1) ** 2).mean()
 
             g_optimizer.zero_grad()
             G_loss.backward()

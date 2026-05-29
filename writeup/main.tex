@@ -203,4 +203,35 @@ produces $\lfloor (7-4)/1 \rfloor + 1 = 4$ output positions, as required.
 % Future tasks will be appended below as the assignment progresses.
 % =========================================================================
 
+% -------------------------------------------------------------------------
+\subsection*{Task 1.4 -- DCGAN Training Loop}
+
+The training loop alternates one discriminator step and one generator
+step per minibatch, both with the least-squares loss from
+Algorithm~1 of the assignment.
+
+\paragraph{Discriminator update.} Given $m$ real images $x$ and $m$
+generator samples $\tilde{x}=G(z)$ (with fresh noise $z\!\sim\!\mathcal{U}[-1,1]^{\,d}$),
+\begin{align*}
+    J^{(D)}_{\text{real}} &= \frac{1}{m}\sum_{i=1}^{m}\bigl(D(x^{(i)}) - 1\bigr)^{2}, \\
+    J^{(D)}_{\text{fake}} &= \frac{1}{m}\sum_{i=1}^{m} D\bigl(G(z^{(i)})\bigr)^{2}, \\
+    J^{(D)}                  &= \tfrac{1}{2}\bigl(J^{(D)}_{\text{real}} + J^{(D)}_{\text{fake}}\bigr).
+\end{align*}
+The fake batch is detached (\verb|fake_images.detach()|) before the
+discriminator forward pass so the discriminator gradients do not leak
+into $G$'s parameters.
+
+\paragraph{Generator update.} A \emph{fresh} noise batch $z'$ is drawn,
+$\tilde{x}'=G(z')$ is generated, and
+\[
+    J^{(G)} \;=\; \frac{1}{m}\sum_{i=1}^{m}\bigl(D(G(z'^{(i)})) - 1\bigr)^{2}.
+\]
+Here gradients must flow through both $D$ and $G$, so no detach is used
+and only the generator parameters are stepped. Drawing new noise (rather
+than reusing the discriminator's batch) is what the pseudocode
+prescribes and avoids any subtle bias from over-fitting to the same
+samples in the same iteration.
+
+% =========================================================================
+
 \end{document}
