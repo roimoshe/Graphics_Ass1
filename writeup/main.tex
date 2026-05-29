@@ -1,0 +1,154 @@
+% Assignment 1 -- GAN Playground
+% Deep Neural Networks for Computer Graphics
+%
+% This file is self-contained and compiles cleanly on Overleaf with
+% the default pdfLaTeX engine.
+
+\documentclass[11pt,a4paper]{article}
+
+% --- packages -------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black,
+    citecolor=blue!60!black,
+}
+
+% --- listings: python ----------------------------------------------------
+\definecolor{codebg}{rgb}{0.97,0.97,0.97}
+\definecolor{codekw}{rgb}{0.13,0.29,0.53}
+\definecolor{codestr}{rgb}{0.50,0.30,0.10}
+\definecolor{codecmt}{rgb}{0.40,0.55,0.40}
+
+\lstdefinestyle{py}{
+    language=Python,
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{codekw}\bfseries,
+    stringstyle=\color{codestr},
+    commentstyle=\color{codecmt}\itshape,
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    framesep=4pt,
+    rulecolor=\color{black!15},
+    numbers=left,
+    numberstyle=\tiny\color{black!50},
+    numbersep=8pt,
+    columns=fullflexible,
+}
+\lstset{style=py}
+
+% --- title ---------------------------------------------------------------
+\title{Assignment~1 -- GAN Playground\\
+       \large Deep Neural Networks for Computer Graphics}
+\author{Roi Moshe}
+\date{\today}
+
+% =========================================================================
+\begin{document}
+\maketitle
+
+% =========================================================================
+\section*{Part 1 -- Deep Convolutional GAN}
+
+% -------------------------------------------------------------------------
+\subsection*{Task 1.1 -- Data Augmentation}
+
+The \texttt{vanilla} branch of \texttt{get\_data\_loader} composes the
+following pipeline (in order): resize to a slightly larger canvas, take a
+random square crop back to \texttt{opts.image\_size}, randomly flip
+horizontally, convert to a tensor in $[0,1]$, then normalise to $[-1,1]$
+so the output range matches the generator's \texttt{tanh}.
+
+\begin{lstlisting}
+load_size = int(1.1 * opts.image_size)
+osize = [load_size, load_size]
+train_transform = transforms.Compose([
+    transforms.Resize(osize, Image.BICUBIC),
+    transforms.RandomCrop(opts.image_size),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+])
+\end{lstlisting}
+
+% -------------------------------------------------------------------------
+\subsection*{Task 1.2a -- Padding Derivation}
+
+For a 2-D convolution with input spatial size $H_{\text{in}}$, kernel
+size $K$, stride $S$, and padding $P$, the output size is
+%
+\begin{equation}
+    H_{\text{out}}
+    \;=\;
+    \left\lfloor
+    \frac{H_{\text{in}} + 2P - K}{S}
+    \right\rfloor + 1.
+    \label{eq:conv-out}
+\end{equation}
+%
+The discriminator's first four convolutions must downsample by exactly a
+factor of two, i.e. $H_{\text{out}} = H_{\text{in}}/2$, with the prescribed
+$K = 4$ and $S = 2$. Substituting into~\eqref{eq:conv-out} (and noting
+that $H_{\text{in}}$ is even so the floor is exact):
+%
+\begin{align*}
+    \frac{H_{\text{in}}}{2}
+        &= \frac{H_{\text{in}} + 2P - 4}{2} + 1 \\[2pt]
+    H_{\text{in}}
+        &= H_{\text{in}} + 2P - 4 + 2 \\[2pt]
+    0   &= 2P - 2 \\[2pt]
+    \boxed{P = 1.}
+\end{align*}
+%
+Sanity check on layer~1: $H_{\text{in}}=64$ gives
+$\lfloor (64 + 2 - 4)/2 \rfloor + 1 = 31 + 1 = 32$, halving the spatial
+extent as required. The same holds for the remaining three downsampling
+layers.
+
+% -------------------------------------------------------------------------
+\subsection*{Task 1.2b -- DCDiscriminator}
+
+Using $P=1$ for layers~1--4 and the helper \texttt{conv} from
+\texttt{models.py}, the discriminator follows the channel/spatial schedule
+in Table~\ref{tab:disc}. The final \texttt{conv5} collapses the
+$4{\times}4$ feature map to a single scalar with $K=4,\,S=1,\,P=0$ (and
+no normalisation or activation, since the loss is least-squares on the
+raw logit).
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lcccccc}
+        \toprule
+        Layer & $C_{\text{in}}\!\to\!C_{\text{out}}$ & $K$ & $S$ & $P$ & Norm & Activation \\
+        \midrule
+        conv1 & $3 \to 32$    & 4 & 2 & 1 & InstanceNorm & ReLU \\
+        conv2 & $32 \to 64$   & 4 & 2 & 1 & InstanceNorm & ReLU \\
+        conv3 & $64 \to 128$  & 4 & 2 & 1 & InstanceNorm & ReLU \\
+        conv4 & $128 \to 256$ & 4 & 2 & 1 & InstanceNorm & ReLU \\
+        conv5 & $256 \to 1$   & 4 & 1 & 0 & --           & --    \\
+        \bottomrule
+    \end{tabular}
+    \caption{DCDiscriminator layer schedule. Output spatial sizes follow
+             the doubling-down sequence $64 \to 32 \to 16 \to 8 \to 4 \to 1$.}
+    \label{tab:disc}
+\end{table}
+
+% =========================================================================
+% Future tasks will be appended below as the assignment progresses.
+% =========================================================================
+
+\end{document}
