@@ -232,6 +232,35 @@ than reusing the discriminator's batch) is what the pseudocode
 prescribes and avoids any subtle bias from over-fitting to the same
 samples in the same iteration.
 
+% -------------------------------------------------------------------------
+\subsection*{Task 1.5 -- Differentiable Augmentation}
+
+\verb|prepare_images| is the hook the training loop calls on every batch
+of images before they reach the discriminator (both real and fake). With
+\verb|--use_diffaug| it applies the DiffAugment policy
+\verb|'color,translation,cutout'|; otherwise it is a pass-through:
+
+\begin{lstlisting}
+def prepare_images(images, opts):
+    if opts.use_diffaug:
+        return DiffAugment(images, policy=policy)
+    return images
+\end{lstlisting}
+
+\paragraph{Why this is different from Task 1.1.} Standard data
+augmentation (Task 1.1) lives in the dataloader, so it only touches
+\emph{real} images and is non-differentiable -- no gradient ever flows
+through it. DiffAugment is applied \emph{inside} the training loop to
+both real and fake images, and every transformation it uses
+(brightness/colour jitter, translation, cutout) is implemented with
+differentiable PyTorch ops. As a result, when the generator's loss is
+back-propagated through the discriminator, gradients continue to flow
+through the augmentation into $G$. This is what the original
+DiffAugment paper identifies as essential: if only $D$ saw augmented
+images while $G$ was trained against the un-augmented version, the two
+networks would be optimising different distributions and training would
+degrade.
+
 % =========================================================================
 
 \end{document}

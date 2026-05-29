@@ -114,10 +114,13 @@ def sample_noise(batch_size, dim):
 def prepare_images(images, opts):
     """Prepare images before they are passed to the discriminator.
 
-    TODO 1.5:
-    Complete this function according to the DiffAugment instructions
-    in the assignment.
+    With --use_diffaug, applies the DiffAugment policy
+    'color,translation,cutout' (defined at the top of this file)
+    differentiably so gradients can flow back through the augmentation
+    into the generator. Otherwise returns the images unchanged.
     """
+    if opts.use_diffaug:
+        return DiffAugment(images, policy=policy)
     return images
 
 
