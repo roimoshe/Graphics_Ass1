@@ -302,6 +302,134 @@ loss-curve panel and the image panel share a common monotone time axis
 that lets the visual quality at iteration $k$ be read off against the
 loss values at the same $k$.
 
+% -------------------------------------------------------------------------
+\subsection*{Task 1.7 -- Experiments \& Report}
+
+The DCGAN was trained for 500 epochs both with and without
+\verb|--use_diffaug| (otherwise identical hyperparameters: batch size
+16, $\eta=2\!\times\!10^{-4}$, Adam $(\beta_1,\beta_2)=(0.5,0.999)$,
+\verb|--data_preprocess vanilla|). All loss curves, image grids, and
+the discussion required by the assignment (loss-curve evolution,
+visual-quality progression, and the Task~1.1 vs Task~1.5 augmentation
+comparison) are collected in a public W\&B Report:
+
+\begin{center}
+\fbox{\parbox{0.92\linewidth}{\centering
+\textbf{W\&B Report:}\\
+\url{https://api.wandb.ai/links/roimoshe1995-tel-aviv-university/0n0y7jgw}
+}}
+\end{center}
+
+The report visibility is set to \emph{Anyone with the link can view}.
+
+\paragraph{Loss-curve evolution.}
+Both runs were trained for $\sim\!6{,}500$ iterations
+($500$ epochs $\times \sim\!13$ iters/epoch on the $\sim\!200$-image
+\texttt{grumpifyBprocessed} dataset, batch size~$16$). Under the
+least-squares loss, the LSGAN equilibrium $D\!\equiv\!0.5$ corresponds
+to $D/\text{real}\!=\!D/\text{fake}\!=\!D/\text{total}\!=\!G\!=\!0.25$,
+while a fully discriminator-dominated regime
+($D(x)\!\to\!1$, $D(G(z))\!\to\!0$) gives $D/\text{total}\!\to\!0$ and
+$G\!\to\!1$.
+\begin{itemize}[leftmargin=1.5em]
+    \item The \textbf{baseline} run sits squarely in the
+          discriminator-dominated regime: $D/\text{total}$ settles
+          around $\sim\!0.04$ and even drifts slightly downward,
+          $D/\text{real}$ and $D/\text{fake}$ both hover at
+          $\sim\!0.03$--$0.05$, and $G/\text{loss}$ saturates near
+          $\sim\!1.0$. With only $\sim\!200$ training images and no
+          augmentation inside the training loop, the discriminator
+          quickly memorises the dataset and the generator's gradient
+          signal collapses -- the textbook small-data DCGAN failure
+          mode the assignment warns about in Section~1.1.
+    \item The \textbf{DiffAugment} run is markedly closer to
+          equilibrium: $D/\text{total}\!\approx\!0.15$,
+          $G/\text{loss}\!\approx\!0.65$, both stationary throughout
+          training. The visible upward spikes in $D/\text{real}$ and
+          $D/\text{fake}$ (occasional excursions to $0.3$--$0.5$) are
+          the expected consequence of randomised augmentations
+          presenting batch-to-batch variation in difficulty -- they
+          are a feature, since they prevent the discriminator from
+          locking onto memorised features. Crucially, $D/\text{total}$
+          shows no downward trend.
+\end{itemize}
+Neither run reaches the ideal $0.25$ equilibrium, which is consistent
+with the very small dataset and the absence of additional regularisers,
+but DiffAugment moves both networks substantially in the right
+direction.
+
+\paragraph{Visual quality over training.}
+Inspecting the \texttt{samples} grid at three checkpoints (early
+$\sim\!200$, mid $\sim\!2400$, late $\sim\!6400$):
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Iter $\sim\!200$.} Both runs produce coarse
+          brown/black/white blobs with no recognisable structure.
+          Indistinguishable from each other -- training has not yet
+          had time to differentiate the two regimes.
+    \item \textbf{Iter $\sim\!2400$.} Both runs have learned the
+          Grumpy-Cat face structure (eyes, ears, mouth in roughly the
+          right places). The \emph{baseline} grid already exhibits
+          the classic small-data pathologies: purple/magenta
+          chromatic noise around the eyes and ears and high
+          uniformity across the 16 cells. The \emph{DiffAugment} grid
+          is softer, with more natural fur and background colours
+          and visible cell-to-cell variation in pose and lighting.
+    \item \textbf{Iter $\sim\!6400$.} Both runs sharpen further. The
+          \emph{baseline} samples now show pronounced cyan/magenta
+          fringing along facial outlines and an ``etched'',
+          over-sharpened texture; the \emph{DiffAugment} samples have
+          cleaner colours, smoother fur, and more cell-to-cell
+          variation in head tilt and shading.
+\end{itemize}
+Because the dataset is essentially photographs of a single cat, the
+modest diversity gap between the two runs cannot be read as full mode
+collapse; the more telling differences are the \emph{artefact
+patterns}. The baseline's chromatic fringing and over-sharpening are
+exactly what one would predict from the loss curves: with $D$ winning
+decisively, $G$'s gradient saturates, so $G$ keeps pushing
+high-frequency texture without correcting any of the colour or shape
+errors $D$ no longer cares about.
+
+\paragraph{Standard dataset augmentation vs.\ DiffAugment.}
+The two augmentation schemes used in this assignment differ along
+three axes:
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Where applied.} The Task~1.1 transform lives inside
+          the \texttt{Dataset} (\verb|data_loader.py|) and is applied
+          \emph{only} to real images, once per item, before they enter
+          the training loop. DiffAugment (Task~1.5) is applied
+          \emph{inside} the training loop via \verb|prepare_images|,
+          to \emph{both} real images and the generator's fake images,
+          before they reach the discriminator.
+    \item \textbf{Differentiability.} \verb|RandomCrop| and
+          \verb|RandomHorizontalFlip| are non-differentiable PIL
+          operations -- this is harmless, because they only ever touch
+          real images that the loss does not back-propagate through.
+          DiffAugment's transformations (random brightness, colour
+          jitter, translation, cutout) are implemented with
+          differentiable PyTorch ops, so when the generator's loss
+          $\bigl(D(\text{aug}(G(z)))-1\bigr)^{2}$ is back-propagated,
+          gradients flow through the augmentation back into $G$.
+          This is essential: if augmentations were applied only to $D$
+          but were not differentiable, $G$ would be optimised against
+          a discriminator trained on a different distribution from the
+          one $G$ actually sees evaluating itself, and training would
+          drift.
+    \item \textbf{Effect on stability and output.} In our experiment
+          the Task~1.1 augmentation alone was insufficient: the
+          baseline run saw $D/\text{total}$ collapse to
+          $\sim\!0.04$ and produced samples with strong chromatic
+          artefacts. Adding DiffAugment kept $D/\text{total}$
+          stationary at $\sim\!0.15$, brought $G/\text{loss}$ down
+          from $\sim\!1.0$ to $\sim\!0.65$, and produced visibly
+          cleaner samples with less fringing and more diversity. The
+          two schemes are complementary rather than competing:
+          standard augmentation grows the effective dataset cheaply
+          for free at load time, while DiffAugment regularises the
+          adversarial game itself by ensuring $D$ never sees the same
+          batch twice.
+\end{itemize}
+
 % =========================================================================
 
 \end{document}
