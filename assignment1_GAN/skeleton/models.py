@@ -200,15 +200,29 @@ class CycleGenerator(nn.Module):
         # ---------------------------------------------------------------
 
         # Encoder
-        self.conv1 = None
-        self.conv2 = None
+        self.conv1 = conv(3, conv_dim // 2, kernel_size=4, stride=2,
+                          padding=1, norm=norm,
+                          init_zero_weights=init_zero_weights,
+                          activ='relu')
+        self.conv2 = conv(conv_dim // 2, conv_dim, kernel_size=4, stride=2,
+                          padding=1, norm=norm,
+                          init_zero_weights=init_zero_weights,
+                          activ='relu')
 
         # Transform (3 residual blocks)
-        self.resnet_block = None
+        self.resnet_block = nn.Sequential(
+            ResnetBlock(conv_dim, norm=norm, activ='relu'),
+            ResnetBlock(conv_dim, norm=norm, activ='relu'),
+            ResnetBlock(conv_dim, norm=norm, activ='relu'),
+        )
 
         # Decoder
-        self.up_conv1 = None
-        self.up_conv2 = None
+        self.up_conv1 = up_conv(conv_dim, conv_dim // 2, kernel_size=3,
+                                stride=1, padding=1, scale_factor=2,
+                                norm=norm, activ='relu')
+        self.up_conv2 = up_conv(conv_dim // 2, 3, kernel_size=3,
+                                stride=1, padding=1, scale_factor=2,
+                                norm=None, activ='tanh')
 
     def forward(self, x):
         """
@@ -223,7 +237,12 @@ class CycleGenerator(nn.Module):
         # ---------------------------------------------------------------
         # TODO 2.1 – pass x through encoder -> resnet_block -> decoder.
         # ---------------------------------------------------------------
-        pass
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.resnet_block(x)
+        x = self.up_conv1(x)
+        x = self.up_conv2(x)
+        return x
 
 
 class PatchDiscriminator(nn.Module):
@@ -243,10 +262,14 @@ class PatchDiscriminator(nn.Module):
         # TODO 2.2 – define the layers.
         # Target output shape for a 64x64 input: (BS, 1, 4, 4).
         # ---------------------------------------------------------------
-        self.conv1 = None
-        self.conv2 = None
-        self.conv3 = None
-        self.conv4 = None
+        self.conv1 = conv(3, conv_dim // 2, kernel_size=4, stride=2,
+                          padding=1, norm=norm, activ='relu')
+        self.conv2 = conv(conv_dim // 2, conv_dim, kernel_size=4, stride=2,
+                          padding=1, norm=norm, activ='relu')
+        self.conv3 = conv(conv_dim, conv_dim * 2, kernel_size=4, stride=2,
+                          padding=1, norm=norm, activ='relu')
+        self.conv4 = conv(conv_dim * 2, 1, kernel_size=4, stride=2,
+                          padding=1, norm=None, activ=None)
         self.conv5 = None
 
     def forward(self, x):
@@ -262,7 +285,11 @@ class PatchDiscriminator(nn.Module):
         # ---------------------------------------------------------------
         # TODO 2.2 – forward pass through your layers.
         # ---------------------------------------------------------------
-        pass
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        return x
 
 
 # ---------------------------------------------------------------------------
