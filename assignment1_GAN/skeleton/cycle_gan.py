@@ -192,21 +192,30 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         # TODO 2.3
         # ------------------------------------------------------------------
         # 1. Compute the discriminator losses on real images
-        D_X_loss = None
-        D_Y_loss = None
+        real_X = DiffAugment(images_X, policy) if opts.use_diffaug else images_X
+        real_Y = DiffAugment(images_Y, policy) if opts.use_diffaug else images_Y
+        D_X_loss = ((D_X(real_X) - 1) ** 2).mean()
+        D_Y_loss = ((D_Y(real_Y) - 1) ** 2).mean()
 
         d_real_loss = D_X_loss + D_Y_loss
 
         # 2. Generate domain-X-like images based on real images in domain Y
-        fake_X = None
+        fake_X = G_YtoX(images_Y).detach()
 
         # 3. Compute the loss for D_X
-        D_X_loss = None
+        fake_X_processed = (
+            DiffAugment(fake_X, policy) if opts.use_diffaug else fake_X
+        )
+        D_X_loss = (D_X(fake_X_processed) ** 2).mean()
 
         # 4. Generate domain-Y-like images based on real images in domain X
+        fake_Y = G_XtoY(images_X).detach()
 
         # 5. Compute the loss for D_Y
-        D_Y_loss = None
+        fake_Y_processed = (
+            DiffAugment(fake_Y, policy) if opts.use_diffaug else fake_Y
+        )
+        D_Y_loss = (D_Y(fake_Y_processed) ** 2).mean()
 
         d_fake_loss = D_X_loss + D_Y_loss
 
@@ -226,10 +235,13 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         # TODO 2.3
         # ------------------------------------------------------------------
         # 1. Generate domain-X-like images based on real images in domain Y
-        fake_X = None
+        fake_X = G_YtoX(images_Y)
 
         # 2. Compute the generator loss based on domain X
-        g_loss = None
+        fake_X_processed = (
+            DiffAugment(fake_X, policy) if opts.use_diffaug else fake_X
+        )
+        g_loss = ((D_X(fake_X_processed) - 1) ** 2).mean()
 
         # ------------------------------------------------------------------
         # TODO 2.5 – log generator losses to W&B
@@ -241,7 +253,10 @@ def training_loop(dataloader_X, dataloader_Y, opts):
             # TODO 2.4
             # ------------------------------------------------------------------
             # 3. Cycle consistency loss
-            cycle_consistency_loss = None
+            reconstructed_Y = G_XtoY(fake_X)
+            cycle_consistency_loss = torch.abs(
+                reconstructed_Y - images_Y
+            ).mean()
 
             g_loss += opts.lambda_cycle * cycle_consistency_loss
 
@@ -254,10 +269,13 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         # TODO 2.3
         # ------------------------------------------------------------------
         # 4. Generate domain-Y-like images based on real images in domain X
-        fake_Y = None
+        fake_Y = G_XtoY(images_X)
 
         # 5. Compute the generator loss based on domain Y
-        g_loss += None
+        fake_Y_processed = (
+            DiffAugment(fake_Y, policy) if opts.use_diffaug else fake_Y
+        )
+        g_loss += ((D_Y(fake_Y_processed) - 1) ** 2).mean()
 
         # ------------------------------------------------------------------
         # TODO 2.5 – log generator losses to W&B
@@ -269,7 +287,10 @@ def training_loop(dataloader_X, dataloader_Y, opts):
             # TODO 2.4
             # ------------------------------------------------------------------
             # 6. Cycle consistency loss
-            cycle_consistency_loss = None
+            reconstructed_X = G_YtoX(fake_Y)
+            cycle_consistency_loss = torch.abs(
+                reconstructed_X - images_X
+            ).mean()
 
             g_loss += opts.lambda_cycle * cycle_consistency_loss
 
