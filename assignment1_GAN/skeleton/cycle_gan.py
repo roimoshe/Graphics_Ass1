@@ -128,7 +128,10 @@ def save_samples(iteration, fixed_Y, fixed_X, G_YtoX, G_XtoY, opts):
     # ------------------------------------------------------------------
     # TODO 2.5 – log this image grid to W&B
     # ------------------------------------------------------------------
-    pass
+    wandb.log(
+        {'samples/X_to_Y': wandb.Image(merged, caption=f'iter {iteration}')},
+        step=iteration,
+    )
 
     merged = merge_images(Y, fake_X, opts)
     path = os.path.join(
@@ -140,7 +143,10 @@ def save_samples(iteration, fixed_Y, fixed_X, G_YtoX, G_XtoY, opts):
     # ------------------------------------------------------------------
     # TODO 2.5 – log this image grid to W&B
     # ------------------------------------------------------------------
-    pass
+    wandb.log(
+        {'samples/Y_to_X': wandb.Image(merged, caption=f'iter {iteration}')},
+        step=iteration,
+    )
 
 
 def training_loop(dataloader_X, dataloader_Y, opts):
@@ -172,9 +178,17 @@ def training_loop(dataloader_X, dataloader_Y, opts):
     # ------------------------------------------------------------------
     # TODO 2.5 – initialise a W&B run for this training job
     # ------------------------------------------------------------------
-    pass
+    wandb.init(
+        project='assignment1-cyclegan',
+        name=(
+            f'X={opts.X}_Y={opts.Y}_'
+            f'cycle={opts.use_cycle_consistency_loss}'
+        ),
+        config=vars(opts),
+    )
 
     for iteration in range(1, opts.train_iters + 1):
+        log_values = {}
 
         # Reset data_iter for each epoch
         if iteration % iter_per_epoch == 0:
@@ -228,7 +242,11 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         # ------------------------------------------------------------------
         # TODO 2.5 – log discriminator losses to W&B
         # ------------------------------------------------------------------
-        pass
+        log_values.update({
+            'D/real_loss': d_real_loss,
+            'D/fake_loss': d_fake_loss,
+            'D/total_loss': d_total_loss,
+        })
 
         # TRAIN THE GENERATORS
         # ------------------------------------------------------------------
@@ -241,12 +259,13 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         fake_X_processed = (
             DiffAugment(fake_X, policy) if opts.use_diffaug else fake_X
         )
-        g_loss = ((D_X(fake_X_processed) - 1) ** 2).mean()
+        g_yx_loss = ((D_X(fake_X_processed) - 1) ** 2).mean()
+        g_loss = g_yx_loss
 
         # ------------------------------------------------------------------
         # TODO 2.5 – log generator losses to W&B
         # ------------------------------------------------------------------
-        pass
+        log_values['G/yx_loss'] = g_yx_loss
 
         if opts.use_cycle_consistency_loss:
             # ------------------------------------------------------------------
@@ -254,16 +273,16 @@ def training_loop(dataloader_X, dataloader_Y, opts):
             # ------------------------------------------------------------------
             # 3. Cycle consistency loss
             reconstructed_Y = G_XtoY(fake_X)
-            cycle_consistency_loss = torch.abs(
+            cycle_yxy_loss = torch.abs(
                 reconstructed_Y - images_Y
             ).mean()
 
-            g_loss += opts.lambda_cycle * cycle_consistency_loss
+            g_loss += opts.lambda_cycle * cycle_yxy_loss
 
             # ------------------------------------------------------------------
             # TODO 2.5 – log to W&B
             # ------------------------------------------------------------------
-            pass
+            log_values['cycle/yxy_loss'] = cycle_yxy_loss
 
         # ------------------------------------------------------------------
         # TODO 2.3
@@ -275,12 +294,13 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         fake_Y_processed = (
             DiffAugment(fake_Y, policy) if opts.use_diffaug else fake_Y
         )
-        g_loss += ((D_Y(fake_Y_processed) - 1) ** 2).mean()
+        g_xy_loss = ((D_Y(fake_Y_processed) - 1) ** 2).mean()
+        g_loss += g_xy_loss
 
         # ------------------------------------------------------------------
         # TODO 2.5 – log generator losses to W&B
         # ------------------------------------------------------------------
-        pass
+        log_values['G/xy_loss'] = g_xy_loss
 
         if opts.use_cycle_consistency_loss:
             # ------------------------------------------------------------------
@@ -288,16 +308,16 @@ def training_loop(dataloader_X, dataloader_Y, opts):
             # ------------------------------------------------------------------
             # 6. Cycle consistency loss
             reconstructed_X = G_YtoX(fake_Y)
-            cycle_consistency_loss = torch.abs(
+            cycle_xyx_loss = torch.abs(
                 reconstructed_X - images_X
             ).mean()
 
-            g_loss += opts.lambda_cycle * cycle_consistency_loss
+            g_loss += opts.lambda_cycle * cycle_xyx_loss
 
             # ------------------------------------------------------------------
             # TODO 2.5 – log to W&B
             # ------------------------------------------------------------------
-            pass
+            log_values['cycle/xyx_loss'] = cycle_xyx_loss
 
         # backprop the aggregated g losses and update G_XtoY and G_YtoX
         g_optimizer.zero_grad()
@@ -318,7 +338,11 @@ def training_loop(dataloader_X, dataloader_Y, opts):
             # ------------------------------------------------------------------
             # TODO 2.5 – log scalars to W&B
             # ------------------------------------------------------------------
-            pass
+            log_values['G/total_loss'] = g_loss
+            wandb.log(
+                {key: value.item() for key, value in log_values.items()},
+                step=iteration,
+            )
 
         # Save the generated samples
         if iteration % opts.sample_every == 0:
@@ -331,7 +355,7 @@ def training_loop(dataloader_X, dataloader_Y, opts):
     # ------------------------------------------------------------------
     # TODO 2.5 – finish the W&B run
     # ------------------------------------------------------------------
-    pass
+    wandb.finish()
 
 
 def main(opts):
