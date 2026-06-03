@@ -17,9 +17,6 @@ import wandb
 import utils
 from data_loader import get_data_loader
 from models import CycleGenerator, DCDiscriminator, PatchDiscriminator
-from diff_augment import DiffAugment
-
-policy = 'color,translation,cutout'
 
 SEED = 11
 
@@ -206,10 +203,8 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         # TODO 2.3
         # ------------------------------------------------------------------
         # 1. Compute the discriminator losses on real images
-        real_X = DiffAugment(images_X, policy) if opts.use_diffaug else images_X
-        real_Y = DiffAugment(images_Y, policy) if opts.use_diffaug else images_Y
-        D_X_loss = ((D_X(real_X) - 1) ** 2).mean()
-        D_Y_loss = ((D_Y(real_Y) - 1) ** 2).mean()
+        D_X_loss = ((D_X(images_X) - 1) ** 2).mean()
+        D_Y_loss = ((D_Y(images_Y) - 1) ** 2).mean()
 
         d_real_loss = D_X_loss + D_Y_loss
 
@@ -217,19 +212,13 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         fake_X = G_YtoX(images_Y).detach()
 
         # 3. Compute the loss for D_X
-        fake_X_processed = (
-            DiffAugment(fake_X, policy) if opts.use_diffaug else fake_X
-        )
-        D_X_loss = (D_X(fake_X_processed) ** 2).mean()
+        D_X_loss = (D_X(fake_X) ** 2).mean()
 
         # 4. Generate domain-Y-like images based on real images in domain X
         fake_Y = G_XtoY(images_X).detach()
 
         # 5. Compute the loss for D_Y
-        fake_Y_processed = (
-            DiffAugment(fake_Y, policy) if opts.use_diffaug else fake_Y
-        )
-        D_Y_loss = (D_Y(fake_Y_processed) ** 2).mean()
+        D_Y_loss = (D_Y(fake_Y) ** 2).mean()
 
         d_fake_loss = D_X_loss + D_Y_loss
 
@@ -256,10 +245,7 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         fake_X = G_YtoX(images_Y)
 
         # 2. Compute the generator loss based on domain X
-        fake_X_processed = (
-            DiffAugment(fake_X, policy) if opts.use_diffaug else fake_X
-        )
-        g_yx_loss = ((D_X(fake_X_processed) - 1) ** 2).mean()
+        g_yx_loss = ((D_X(fake_X) - 1) ** 2).mean()
         g_loss = g_yx_loss
 
         # ------------------------------------------------------------------
@@ -291,10 +277,7 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         fake_Y = G_XtoY(images_X)
 
         # 5. Compute the generator loss based on domain Y
-        fake_Y_processed = (
-            DiffAugment(fake_Y, policy) if opts.use_diffaug else fake_Y
-        )
-        g_xy_loss = ((D_Y(fake_Y_processed) - 1) ** 2).mean()
+        g_xy_loss = ((D_Y(fake_Y) - 1) ** 2).mean()
         g_loss += g_xy_loss
 
         # ------------------------------------------------------------------
@@ -413,7 +396,6 @@ def create_parser():
     parser.add_argument('--X', type=str, default='cat/grumpifyAprocessed')
     parser.add_argument('--Y', type=str, default='cat/grumpifyBprocessed')
     parser.add_argument('--ext', type=str, default='*.png')
-    parser.add_argument('--use_diffaug', action='store_true')
     parser.add_argument('--data_preprocess', type=str, default='vanilla')
 
     # Saving directories and checkpoint/sample iterations
@@ -438,8 +420,6 @@ if __name__ == '__main__':
     )
     if opts.use_cycle_consistency_loss:
         opts.sample_dir += '_cycle'
-    if opts.use_diffaug:
-        opts.sample_dir += '_diffaug'
 
     if os.path.exists(opts.sample_dir):
         cmd = 'rm %s/*' % opts.sample_dir
