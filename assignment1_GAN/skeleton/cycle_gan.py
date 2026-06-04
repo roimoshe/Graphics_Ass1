@@ -11,12 +11,16 @@ import os
 import imageio
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
 import wandb
 
 import utils
 from data_loader import get_data_loader
+from diff_augment import DiffAugment
 from models import CycleGenerator, DCDiscriminator, PatchDiscriminator
+
+policy = 'color,translation,cutout'
 
 SEED = 11
 
@@ -24,6 +28,25 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(SEED)
+
+
+def sobel_edges(images):
+    """Returns Sobel edge magnitudes for a batch of RGB images."""
+    grayscale = images.mean(dim=1, keepdim=True)
+    sobel_x = torch.tensor(
+        [[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]],
+        dtype=images.dtype,
+        device=images.device,
+    ).unsqueeze(0)
+    sobel_y = torch.tensor(
+        [[[-1, -2, -1], [0, 0, 0], [1, 2, 1]]],
+        dtype=images.dtype,
+        device=images.device,
+    ).unsqueeze(0)
+    grayscale = F.pad(grayscale, (1, 1, 1, 1), mode='reflect')
+    edge_x = F.conv2d(grayscale, sobel_x)
+    edge_y = F.conv2d(grayscale, sobel_y)
+    return torch.sqrt(edge_x ** 2 + edge_y ** 2 + 1e-12)
 
 
 def print_models(G_XtoY, G_YtoX, D_X, D_Y):
@@ -151,6 +174,12 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         * Saves checkpoint every opts.checkpoint_every iterations
         * Saves generated samples every opts.sample_every iterations
     """
+    if opts.lambda_edge > 0 and not opts.use_cycle_consistency_loss:
+        raise ValueError(
+            '--lambda_edge requires --use_cycle_consistency_loss because '
+            'the implemented edge loss is an edge cycle-consistency loss.'
+        )
+
     # Create generators and discriminators
     G_XtoY, G_YtoX, D_X, D_Y = create_model(opts)
 
@@ -179,7 +208,8 @@ def training_loop(dataloader_X, dataloader_Y, opts):
         project='assignment1-cyclegan',
         name=(
             f'X={opts.X}_Y={opts.Y}_'
-            f'cycle={opts.use_cycle_consistency_loss}'
+            f'cycle={opts.use_cycle_consistency_loss}_'
+            f'identity={opts.lambda_identity}_edge={opts.lambda_edge}'
         ),
         config=vars(opts),
     )
@@ -270,6 +300,13 @@ def training_loop(dataloader_X, dataloader_Y, opts):
             # ------------------------------------------------------------------
             log_values['cycle/yxy_loss'] = cycle_yxy_loss
 
+            if opts.lambda_edge > 0:
+                edge_yxy_loss = torch.abs(
+                    sobel_edges(reconstructed_Y) - sobel_edges(images_Y)
+                ).mean()
+                g_loss += opts.lambda_edge * edge_yxy_loss
+                log_values['edge/yxy_loss'] = edge_yxy_loss
+
         # ------------------------------------------------------------------
         # TODO 2.3
         # ------------------------------------------------------------------
@@ -301,6 +338,24 @@ def training_loop(dataloader_X, dataloader_Y, opts):
             # TODO 2.5 – log to W&B
             # ------------------------------------------------------------------
             log_values['cycle/xyx_loss'] = cycle_xyx_loss
+
+            if opts.lambda_edge > 0:
+                edge_xyx_loss = torch.abs(
+                    sobel_edges(reconstructed_X) - sobel_edges(images_X)
+                ).mean()
+                g_loss += opts.lambda_edge * edge_xyx_loss
+                log_values['edge/xyx_loss'] = edge_xyx_loss
+
+        if opts.lambda_identity > 0:
+            identity_X = G_YtoX(images_X)
+            identity_Y = G_XtoY(images_Y)
+            identity_x_loss = torch.abs(identity_X - images_X).mean()
+            identity_y_loss = torch.abs(identity_Y - images_Y).mean()
+            identity_loss = identity_x_loss + identity_y_loss
+            g_loss += opts.lambda_identity * identity_loss
+            log_values['identity/x_loss'] = identity_x_loss
+            log_values['identity/y_loss'] = identity_y_loss
+            log_values['identity/total_loss'] = identity_loss
 
         # backprop the aggregated g losses and update G_XtoY and G_YtoX
         g_optimizer.zero_grad()
@@ -391,11 +446,14 @@ def create_parser():
     parser.add_argument('--beta1', type=float, default=0.5)
     parser.add_argument('--beta2', type=float, default=0.999)
     parser.add_argument('--lambda_cycle', type=float, default=10)
+    parser.add_argument('--lambda_identity', type=float, default=0)
+    parser.add_argument('--lambda_edge', type=float, default=0)
 
     # Data sources
     parser.add_argument('--X', type=str, default='cat/grumpifyAprocessed')
     parser.add_argument('--Y', type=str, default='cat/grumpifyBprocessed')
     parser.add_argument('--ext', type=str, default='*.png')
+    parser.add_argument('--use_diffaug', action='store_true')
     parser.add_argument('--data_preprocess', type=str, default='vanilla')
 
     # Saving directories and checkpoint/sample iterations
@@ -420,6 +478,12 @@ if __name__ == '__main__':
     )
     if opts.use_cycle_consistency_loss:
         opts.sample_dir += '_cycle'
+    if opts.lambda_identity > 0:
+        opts.sample_dir += '_identity%g' % opts.lambda_identity
+    if opts.lambda_edge > 0:
+        opts.sample_dir += '_edge%g' % opts.lambda_edge
+    if opts.use_diffaug:
+        opts.sample_dir += '_diffaug'
 
     if os.path.exists(opts.sample_dir):
         cmd = 'rm %s/*' % opts.sample_dir
