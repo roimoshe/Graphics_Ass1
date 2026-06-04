@@ -54,7 +54,7 @@
 % --- title ---------------------------------------------------------------
 \title{Assignment~1 -- GAN Playground\\
        \large Deep Neural Networks for Computer Graphics}
-\author{Roi Moshe}
+\author{Roi Moshe \\ Nadav Abayov}
 \date{\today}
 
 % =========================================================================
@@ -429,6 +429,106 @@ three axes:
           adversarial game itself by ensuring $D$ never sees the same
           batch twice.
 \end{itemize}
+
+% =========================================================================
+
+% =========================================================================
+\section*{Part 2 -- CycleGAN}
+
+% -------------------------------------------------------------------------
+\subsection*{Task 2.6 -- CycleGAN Results}
+
+W\&B Report: \url{https://wandb.ai/nadavabayov-tel-aviv-university/assignment1-cyclegan/reports/Part-2-CycleGAN--VmlldzoxNzEyMjk5OQ}
+
+\subsubsection*{Sanity Check: 1,000-Iteration Runs}
+
+The 1,000-iteration runs behave as expected. The generated images already capture some features of the target domain, confirming the model is learning. Notably, the generator loss $G_{yx}$ is approximately $3\times$ lower in the \texttt{cycle\_loss=False} run compared to \texttt{cycle\_loss=True}, which makes sense since the loss is less complex. However, $G_{xy}$ does not show the same notable difference. The reason for this asymmetry between the two directions is unclear.
+
+\subsubsection*{Qualitative Improvement at 10,000 Iterations}
+
+At 10,000 iterations, the generated images show clearer facial features, sharper eyes, and less blurriness overall. The Russian Blue cat generator underperforms compared to the Grumpy Cat generator, which is also reflected in the loss curves where the $Y \to X$ generator loss remains higher than $X \to Y$.
+
+\subsubsection*{Effect of Cycle Consistency Loss}
+
+Yes, cycle consistency improves the outputs. Images generated \emph{with} cycle consistency better preserve the original image's spatial structure --- orientation, face shape, and scale. This is expected, since the cycle consistency loss minimizes the $\ell_1$ distance between $y$ and $G_{X \to Y}(G_{Y \to X}(y))$, explicitly penalizing structural deviations from the input.
+
+\begin{figure}[h]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{consistency_loss_false_1000_iter.png}
+        \caption{Generated images at 1,000 iterations \textbf{without} cycle consistency loss.}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{consistency_loss_true_1000_iter.png}
+        \caption{Generated images at 1,000 iterations \textbf{with} cycle consistency loss.}
+    \end{minipage}
+\end{figure}
+
+\subsubsection*{Specific Example from the 1,000-Iteration Grids}
+
+Comparing the two 1,000-iteration grids, we can see that across most images in the \texttt{cycle\_loss=True} grid, the generated faces preserve the orientation, shape, and scale of the original image. In contrast, the \texttt{cycle\_loss=False} grid generally shows less structural consistency with the source. A clear specific example is the bottom-left image --- in the \texttt{cycle\_loss=True} grid the face orientation and shape closely match the source, while in the \texttt{cycle\_loss=False} grid the face shape and orientation are noticeably different.
+
+% -------------------------------------------------------------------------
+\subsection*{Task 2.7 -- Method Improvement}
+
+W\&B Report: \url{https://wandb.ai/nadavabayov-tel-aviv-university/assignment1-cyclegan/reports/2-7-Bonus-Part---VmlldzoxNzExMzAxMw}
+
+\subsubsection*{What We Changed and Why}
+
+Looking at the generated images from Task 2.6, they appear quite blurry. This is expected since the L1 cycle consistency loss encourages preserving low frequencies but does not transfer high frequencies well (edges), resulting in blurry outputs. To address this, we added a cycle edge loss:
+
+\begin{equation}
+    \mathcal{L}_{edge} = \|S(G_{X\to Y}(x)) - S(x)\|_1 + \|S(G_{Y\to X}(y)) - S(y)\|_1
+\end{equation}
+
+where $S(\cdot)$ denotes the Sobel edge detection operator applied in both $x$ and $y$ directions. This encourages the model to preserve high-frequency details, resulting in sharper outputs.
+
+Additionally, we added an identity loss, motivated by the literature which suggests it improves training stability and encourages the generators to be more conservative. Specifically, if an image already belongs to domain $Y$, then $G_{X\to Y}$ should not change it significantly, and vice versa:
+
+\begin{equation}
+    \mathcal{L}_{identity} = \|G_{X\to Y}(y) - y\|_1 + \|G_{Y\to X}(x) - x\|_1
+\end{equation}
+
+\subsubsection*{Loss Curves}
+
+\begin{figure}[h]
+    \centering
+    \begin{minipage}{0.55\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{identity_loss.png}
+        \caption{Identity loss curves (y, x, and total) over 10,000 iterations.}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.42\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{edge_loss.png}
+        \caption{Edge loss curves ($yxy$ and $xyx$) over 10,000 iterations.}
+    \end{minipage}
+\end{figure}
+
+\subsubsection*{Generated Image Samples}
+
+\begin{figure}[h]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{X_to_Y_2.7.png}
+        \caption{Generated images: $X \to Y$ (Russian Blue $\to$ Grumpy Cat).}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Y_to_X_2.7 2.png}
+        \caption{Generated images: $Y \to X$ (Grumpy Cat $\to$ Russian Blue).}
+    \end{minipage}
+\end{figure}
+
+\subsubsection*{Discussion of Qualitative Results}
+
+The identity loss curves show a smooth and stable descent over 10,000 iterations, and the edge loss plateaus at a stable value, both indicating healthy training. In general, the generated Grumpy Cat images look significantly better compared to the Task~2.6 results --- sharper, with more defined eye details. However, the Russian Blue cat generator performs worse compared to Task 2.6, which is also reflected in the loss curves where $G_{yx}$ loss increases from around 5 to 6. This suggests that adding additional loss terms can sometimes improve one translation direction while hurting the other, as the generators compete over shared capacity.
 
 % =========================================================================
 
